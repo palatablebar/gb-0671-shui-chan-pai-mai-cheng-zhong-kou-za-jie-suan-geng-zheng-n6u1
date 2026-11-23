@@ -5,3 +5,7 @@
 每票第一版不填写 replaces。后续版本只能替代当前生效版，分支或缺基版整票阻断结算。已支付额为各版本中最大累计已付值，待付=最终应付−累计已付；负待付表示待收回。
 同编号同原值仅计一次；同编号不同原值全部隔离。空文件、全空行和仅表头分别报错。原始输入计数包括空行及重复表头，对账会分别解释。
 归档封存保存逐版证据、隔离原因和运行摘要，非支付执行系统。数据使用虚构编号，不连接实际支付渠道。
+
+## 口径迁移字段
+
+历史封存批带 `manifest.sealed_at`（带偏移时间）与封存时规则版本。迁移仅纳入近90天、状态“已封存”、规则版本 `2026.11.17-r2` 的批次。旧口径计价重量量化到 0.001kg，新口径 `2026.11.20-r3` 量化到 0.01kg，金额均四舍五入到 0.01CNY。迁移裁决行包含：`run_id`（旧封存批）、`snapshot_digest`（源快照指纹）、`old_rule_version`/`new_rule_version`、`input_rows`/`quarantine_rows`/`tickets`、`old_amount`/`new_amount`/`amount_delta`、`old_seal`/`new_seal`、`status`（可迁移/留旧待核）、`migrated_run_id` 与 `block_reasons`。新封存批 `manifest.migrated_from` 记录来源旧批；窗口外（`OUT_OF_WINDOW`）与未封存（`NOT_SEALED`）批次只进入排除清单，不计迁移批次数量。

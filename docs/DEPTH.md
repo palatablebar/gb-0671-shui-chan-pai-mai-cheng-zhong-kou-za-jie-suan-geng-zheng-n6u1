@@ -13,6 +13,7 @@
 | M5 更正裁决 | 查看并执行更正裁决 | `POST /api/correction` | `app/modules/correction/rules.py` | `tests/test_correction.py` |
 | M6 应付对账 | 查看并执行应付对账 | `POST /api/reconcile` | `app/modules/reconcile/rules.py` | `tests/test_reconcile.py` |
 | M7 结算归档 | 查看并执行结算归档 | `POST /api/archive` | `app/modules/archive/rules.py` | `tests/test_archive.py` |
+| M8 口径迁移 | 裁决封存批迁移到新扣杂口径 | `POST /api/migration/runs` | `app/migration/rules.py` | `tests/test_migration.py`、`tests/test_migration_web.py` |
 
 ## 陷阱登记
 
@@ -30,6 +31,10 @@
 | TRAP-06 | 全角千分位 | 静默错算或丢失证据 | 显式归一与原因裁决 | `app/modules/conversion/rules.py` | `tests/test_conversion.py::test_fullwidth_thousands` |
 | TRAP-10 | 金额半分舍入 | 静默错算或丢失证据 | 显式归一与原因裁决 | `app/modules/auction/rules.py` | `tests/test_auction.py::test_half_cent_rounding` |
 | TRAP-26 | 陈旧更正分支 | 静默错算或丢失证据 | 显式归一与原因裁决 | `app/modules/correction/rules.py` | `tests/test_correction.py::test_stale_branch` |
+| TRAP-30 | 源快照缺失仍重算替换 | 改写已交付款依据 | 直接阻断留旧，原因码 `MIG_SNAPSHOT_MISSING` | `app/migration/rules.py` | `tests/test_migration.py::test_block_reason_codes` |
+| TRAP-31 | 封存证据与重算对不平 | 新汇总混用失真口径 | 输入行/隔离数/金额/封存指纹四项对平才放行 | `app/migration/rules.py` | `tests/test_migration.py::test_block_reason_codes` |
+| TRAP-32 | 切换失败污染旧版 | 原始快照与封存证据丢失 | 单事务提交，异常整体回滚 | `app/store.py` | `tests/test_migration.py::test_commit_rollback_keeps_everything` |
+| TRAP-33 | 重跑生成不同批次数 | 迁移结果不可复现 | 候选集合指纹决定迁移批号，幂等不新增 | `app/store.py` | `tests/test_migration.py::test_rerun_same_id_and_batch_count` |
 
 ## 对账规则
 

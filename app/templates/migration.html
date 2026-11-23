@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel" style="margin-bottom:12px">
+  <div class="panel__head"><h2>扣杂规则升级迁移</h2>
+    <span>旧口径 {{ plan.old_rule_version if plan else '—' }} → 新口径 {{ plan.new_rule_version if plan else '2026.11.20-r3' }}</span>
+  </div>
+  <div style="padding:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+    <button id="migrate-seed" class="btn">播种近三个月封存批</button>
+    <button id="migrate-run" class="btn primary">执行迁移裁决</button>
+    <span class="mono" style="color:var(--ink-muted);font-size:11px">单事务提交：任一写入失败整体回滚，旧版封存与源快照不改动</span>
+  </div>
+  {% if plan %}
+  <div class="kpis" style="border-bottom:1px solid var(--line);margin-bottom:0">
+    <div class="kpi"><small>候选批次</small><b>{{ plan.summary.candidates }}</b></div>
+    <div class="kpi"><small>可迁移</small><b>{{ plan.summary.migrated }}</b></div>
+    <div class="kpi"><small>留旧待核</small><b>{{ plan.summary.blocked }}</b></div>
+    <div class="kpi"><small>排除（窗口外/未封存）</small><b>{{ plan.summary.excluded }}</b></div>
+    <div class="kpi"><small>迁移批号</small><b style="font-size:13px">{{ plan.migration_id }}</b></div>
+  </div>
+  {% endif %}
+</section>
+
+{% if plan %}
+<section class="panel" style="margin-bottom:12px">
+  <div class="panel__head"><h2>迁移裁决明细</h2><span>{{ plan.batches|length }} 批 · 窗口 {{ plan.window_days }} 天 · 截止 {{ plan.cutoff_at[:10] }}</span></div>
+  <div class="scroll" style="max-height:420px">
+    <table class="ledger">
+      <thead><tr>
+        <th>旧封存批</th><th>封存时间</th><th>源快照指纹</th><th>旧规则版本</th><th>新规则版本</th>
+        <th>输入行</th><th>隔离行</th><th>生效票</th><th>重算前金额 CNY</th><th>重算后金额 CNY</th><th>差额 CNY</th>
+        <th>裁决</th><th>新封存批</th><th>阻断原因</th>
+      </tr></thead>
+      <tbody>
+      {% for b in plan.batches %}
+        <tr>
+          <td title="{{ b.run_id }}">{{ b.run_id }}</td>
+          <td>{{ b.sealed_at[:19].replace('T',' ') if b.sealed_at else '' }}</td>
+          <td class="mono" title="{{ b.snapshot_digest }}">{{ b.snapshot_digest[:12] if b.snapshot_digest else '缺失' }}</td>
+          <td>{{ b.old_rule_version }}</td>
+          <td>{{ b.new_rule_version }}</td>
+          <td class="num">{{ b.input_rows }}</td>
+          <td class="num">{{ b.quarantine_rows }}</td>
+          <td class="num">{{ b.tickets }}</td>
+          <td class="num">{{ b.old_amount }}</td>
+          <td class="num">{{ b.new_amount or '—' }}</td>
+          <td class="num">{{ b.amount_delta or '—' }}</td>
+          <td>{% if b.status=='可迁移' %}<span style="color:var(--ok)">可迁移</span>{% else %}<span style="color:var(--warn)">留旧待核</span>{% endif %}</td>
+          <td>{% if b.migrated_run_id %}<a href="/archive?run_id={{ b.migrated_run_id }}" title="打开新封存批凭证">{{ b.migrated_run_id }}</a>{% else %}—{% endif %}</td>
+          <td title="{% for c in b.block_reasons %}{{ c }} {% endfor %}">{% if b.block_reasons %}{% for c in b.block_reasons %}{{ plan.reason_text.get(c,c) }}<br>{% endfor %}{% else %}—{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel__bar">
+    <span>候选批重算前合计 <b class="num">{{ plan.totals.old_amount }}</b> CNY</span>
+    <span>迁移批重算后合计 <b class="num">{{ plan.totals.new_amount }}</b> CNY</span>
+  </div>
+</section>
+
+<section class="grid">
+  <div class="panel">
+    <div class="panel__head"><h2>排除项（不计入迁移批次数量）</h2><span>{{ plan.excluded|length }}</span></div>
+    <div class="scroll" style="max-height:240px"><table class="ledger">
+      <thead><tr><th>批次</th><th>原因码</th><th>说明</th></tr></thead>
+      <tbody>{% for e in plan.excluded %}<tr><td>{{ e.run_id }}</td><td>{{ e.reason }}</td><td>{{ e.detail }}</td></tr>{% else %}<tr><td>无排除项</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+  <div class="panel">
+    <div class="panel__head"><h2>历史迁移结果</h2><span>{{ migrations|length }}</span></div>
+    <div class="scroll" style="max-height:240px"><table class="ledger">
+      <thead><tr><th>迁移批号</th><th>生成时间</th><th>指纹</th></tr></thead>
+      <tbody>{% for m in migrations %}<tr><td><a href="/migration?migration_id={{ m.id }}">{{ m.id }}</a></td><td>{{ m.created_at[:19].replace('T',' ') }}</td><td class="mono" title="{{ m.digest }}">{{ m.digest[:12] }}</td></tr>{% else %}<tr><td>尚无迁移记录</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+</section>
+{% else %}
+<section class="panel"><div class="trace">尚无迁移结果。先“播种近三个月封存批”，再“执行迁移裁决”。同一候选集合重跑产生相同迁移批号，批次数量保持一致。</div></section>
+{% endif %}
+
+<script>
+function postAction(url, okText){
+  const fb=document.querySelector('#feedback');
+  fb.textContent='处理中…';
+  fetch(url,{method:'POST'}).then(r=>r.json().then(d=>({ok:r.ok,d}))).then(({ok,d})=>{
+    if(!ok)throw new Error(d.detail||'操作失败');
+    fb.textContent=okText(d);
+    setTimeout(()=>location.reload(),600);
+  }).catch(e=>{fb.textContent=e.message;});
+}
+document.querySelector('#migrate-seed').addEventListener('click',()=>postAction('/api/migration/seed',d=>`已播种 ${d.count} 个封存批，跳过 ${d.skipped.length} 个已存在批`));
+document.querySelector('#migrate-run').addEventListener('click',()=>postAction('/api/migration/runs',d=>`迁移批号 ${d.migration_id}：可迁移 ${d.summary.migrated} 批，留旧待核 ${d.summary.blocked} 批`));
+const mid=new URL(location.href).searchParams.get('migration_id');
+</script>
+{% endblock %}
